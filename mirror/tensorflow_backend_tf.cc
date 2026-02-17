@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 // Copyright 2019-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -46,7 +47,7 @@
 #include "tensorflow/core/public/session.h"
 #include "tensorflow/core/public/session_options.h"
 #include "tensorflow/core/util/device_name_utils.h"
-#include "third_party/gpus/cuda/include/cuda_runtime_api.h"
+#include "third_party/gpus/cuda/include/hip/hip_runtime_api.h"
 
 TRITONTF_Error* TRITONTF_ErrorNew(const std::string& str);
 TRITONTF_Shape* TRITONTF_ShapeNew(size_t rank, int64_t* dims);
@@ -414,10 +415,10 @@ TensorImpl::Init()
     nonstring_base_ = static_cast<char*>(flat.data());
     nonstring_byte_size_ = flat.size();
 
-    cudaPointerAttributes attributes;
-    cudaError_t err = cudaPointerGetAttributes(&attributes, nonstring_base_);
+    hipPointerAttribute_t attributes;
+    hipError_t err = hipPointerGetAttributes(&attributes, nonstring_base_);
     gpu_tensor_ =
-        ((err == cudaSuccess) && (attributes.type == cudaMemoryTypeDevice));
+        ((err == hipSuccess) && (attributes.type == hipMemoryTypeDevice));
   }
 }
 

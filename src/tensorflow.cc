@@ -1,3 +1,4 @@
+#include "hip/hip_runtime.h"
 // Copyright 2020-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 //
 // Redistribution and use in source and binary forms, with or without
@@ -39,8 +40,9 @@
 #include "triton/backend/backend_model_instance.h"
 #include "triton/backend/backend_output_responder.h"
 
+#define TRITON_ENABLE_ROCM 1
 #ifdef TRITON_ENABLE_GPU
-#include <cuda_runtime_api.h>
+#include <hip/hip_runtime_api.h>
 #endif  // TRITON_ENABLE_GPU
 
 //
@@ -50,7 +52,7 @@
 namespace triton { namespace backend { namespace tensorflow {
 
 #ifndef TRITON_ENABLE_GPU
-using cudaStream_t = void*;
+using hipStream_t = void*;
 #endif  // !TRITON_ENABLE_GPU
 
 using IONameMap = std::unordered_map<std::string, std::string>;
@@ -486,7 +488,7 @@ TRITONSERVER_Error*
 GetContiguousInputContent(
     TRITONBACKEND_Input* rinput, const char* host_policy_name,
     const uint32_t buffer_count, const char** content,
-    size_t* content_byte_size, char** contiguous_buffer, cudaStream_t stream,
+    size_t* content_byte_size, char** contiguous_buffer, hipStream_t stream,
     bool* cuda_copy)
 {
   *cuda_copy = false;
@@ -564,7 +566,7 @@ SetStringInputTensor(
     TRITONTF_Tensor* tensor, TRITONBACKEND_Input* input, const char* name,
     const uint32_t buffer_count, const size_t request_element_cnt,
     const size_t tensor_offset, TRITONBACKEND_Response** response,
-    cudaStream_t stream, const char* host_policy_name)
+    hipStream_t stream, const char* host_policy_name)
 {
   bool cuda_copy = false;
   size_t element_idx = 0;
@@ -590,7 +592,7 @@ SetStringInputTensor(
 
 #ifdef TRITON_ENABLE_GPU
   if (cuda_copy) {
-    cudaStreamSynchronize(stream);
+    hipStreamSynchronize(stream);
     cuda_copy = false;
   }
 #endif  // TRITON_ENABLE_GPU
@@ -665,7 +667,7 @@ bool
 SetStringOutputBuffer(
     TRITONTF_Tensor* tensor, TRITONBACKEND_Response** response,
     TRITONBACKEND_Output* response_output, const size_t tensor_element_count,
-    const size_t tensor_offset, cudaStream_t stream, std::string* serialized)
+    const size_t tensor_offset, hipStream_t stream, std::string* serialized)
 {
   bool cuda_copy = false;
 
@@ -2092,7 +2094,7 @@ ModelInstanceState::ProcessRequests(
   BackendInputCollector collector(
       requests, request_count, &responses,
       StateForModel()->TritonMemoryManager(),
-      StateForModel()->EnablePinnedInput(), CudaStream(), nullptr, nullptr, 0,
+      StateForModel()->EnablePinnedInput(), RocmStream(), nullptr, nullptr, 0,
       HostPolicyName().c_str());
   {
     // All requests must have equally-sized input tensors so use the first
@@ -2205,7 +2207,7 @@ ModelInstanceState::ProcessRequests(
 
           cuda_copy |= SetStringInputTensor(
               tensor, input, name, buffer_count, batch_element_cnt,
-              tensor_offset, &responses[idx], CudaStream(),
+              tensor_offset, &responses[idx], RocmStream(),
               HostPolicyName().c_str());
           tensor_offset += batch_element_cnt;
         }
@@ -2360,7 +2362,7 @@ ModelInstanceState::ProcessRequests(
   // Wait for any in-flight input tensor copies to complete.
 #ifdef TRITON_ENABLE_GPU
   if (cuda_copy) {
-    cudaStreamSynchronize(CudaStream());
+    hipStreamSynchronize(RocmStream());
   }
 #endif
 
@@ -2414,7 +2416,7 @@ ModelInstanceState::ProcessRequests(
   BackendOutputResponder responder(
       requests, request_count, &responses,
       StateForModel()->TritonMemoryManager(), max_batch_size > 0,
-      StateForModel()->EnablePinnedOutput(), CudaStream());
+      StateForModel()->EnablePinnedOutput(), RocmStream());
   {
     TRITONTF_TensorList* output_tensor_itr = output_tensors.get();
     for (const auto& name : model_output_names) {
@@ -2470,7 +2472,7 @@ ModelInstanceState::ProcessRequests(
               string_buffer.emplace_back(new std::string());
               cuda_copy |= SetStringOutputBuffer(
                   output_tensor, &response, response_output, tensor_element_cnt,
-                  tensor_offset, CudaStream(), string_buffer.back().get());
+                  tensor_offset, RocmStream(), string_buffer.back().get());
             }
 
             tensor_offset += tensor_element_cnt;
@@ -2510,7 +2512,7 @@ ModelInstanceState::ProcessRequests(
 
 #ifdef TRITON_ENABLE_GPU
   if (cuda_copy) {
-    cudaStreamSynchronize(CudaStream());
+    hipStreamSynchronize(RocmStream());
   }
 #endif  // TRITON_ENABLE_GPU
 
